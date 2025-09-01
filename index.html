@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fretboard Trainer – Per‑Root Intervals</title>
+  <style>
+    :root{
+      --bg:#000;
+      --grid:#ffffff22;
+      --text:#f0f0f0;
+      --muted:#a0a0a0;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:var(--bg); color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    }
+
+    header{position:sticky; top:0; background:#000; border-bottom:1px solid var(--grid); padding:10px 12px}
+    .top{display:grid; gap:8px}
+    .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+    h1{font-size:14px; margin:0; color:#ddd; font-weight:700}
+
+    .note-btn{
+      border:1px solid var(--grid); background:#000; color:#ddd;
+      padding:6px 8px; border-radius:6px; cursor:pointer; font-weight:700; font-size:13px;
+    }
+    .note-btn.active{background:#111; border-color:#fff}
+    .status{font-size:12px; color:var(--muted)}
+    .spacer{flex:1}
+    .btn{border:1px solid var(--grid); background:#000; color:#ddd; padding:6px 8px; border-radius:6px; cursor:pointer; font-weight:700; font-size:13px;}
+
+    .editor{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+    .editor label{color:#bbb; font-size:12px}
+    select{background:#000; color:#fff; border:1px solid var(--grid); border-radius:6px; padding:6px 8px}
+    .intervals{display:flex; gap:8px; flex-wrap:wrap}
+    .interval-chk{display:flex; gap:6px; align-items:center}
+    .interval-chk input{accent-color:#fff}
+    .interval-chk label{border:1px solid var(--grid); padding:6px 8px; border-radius:6px; font-weight:700; font-size:12px; cursor:pointer}
+    .interval-chk input:disabled + label{opacity:.35; cursor:not-allowed}
+
+    main{padding:12px}
+
+    /* Grid board */
+    .wrap{border:1px solid var(--grid)}
+    .legend{display:grid; grid-template-columns:72px 1fr; border-bottom:1px solid var(--grid);}
+    .legend .left{display:flex; align-items:center; justify-content:center; border-right:1px solid var(--grid); color:#999; font-size:12px; padding:6px}
+    .legend .frets{display:grid; grid-template-columns:repeat(var(--frets), 1fr);}
+    .legend .frets div{border-left:1px solid var(--grid); text-align:center; padding:6px 0; color:#888; font-size:12px}
+
+    .board{display:grid; grid-template-columns:72px 1fr;}
+    .labels{display:grid; grid-template-rows:repeat(6, 1fr); border-right:1px solid var(--grid);}
+    .labels div{display:flex; align-items:center; justify-content:center; border-bottom:1px solid var(--grid); font-weight:800; color:#ddd}
+    .labels div:last-child{border-bottom:none}
+    .strings{display:grid; grid-template-rows:repeat(6, 1fr);}
+    .rowcells{display:grid; grid-template-columns:repeat(var(--frets), 1fr);}
+    .cell{
+      border-left:1px solid var(--grid);
+      border-bottom:1px solid var(--grid);
+      min-height:44px;
+      display:flex; align-items:center; justify-content:center;
+      position:relative;
+      background:#000; color:#fff; font-weight:800; font-size:13px;
+      transition: background-color .15s ease;
+    }
+    .rowcells:last-child .cell{border-bottom:none}
+
+    .badge{
+      position:relative; z-index:1; padding:2px 6px; border-radius:4px;
+    }
+    /* Root ring (drawn with outline so no glow) */
+    .badge[data-root-ring="true"]{
+      outline: 2px solid #fff;
+      outline-offset: 2px;
+      border-radius: 999px; /* circular ring look around text */
+      padding:2px 8px;
+    }
+
+    @media (max-width: 800px){
+      .legend{grid-template-columns:56px 1fr;}
+      .board{grid-template-columns:56px 1fr;}
+      .cell{min-height:38px; font-size:12px}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="top">
+      <div class="row">
+        <h1>Fretboard Trainer</h1>
+        <div id="noteButtons" class="buttons"></div>
+        <div class="spacer"></div>
+        <button id="clearBtn" class="btn">Clear</button>
+      </div>
+      <div class="row editor">
+        <label for="editRoot">Edit intervals for:</label>
+        <select id="editRoot"></select>
+        <div id="intervalEditor" class="intervals">
+          <!-- Order: Root, M3, m3, P5, 6th, b7, maj7 -->
+          <div class="interval-chk"><input type="checkbox" id="e-root"><label for="e-root">Root</label></div>
+          <div class="interval-chk"><input type="checkbox" id="e-M3"><label for="e-M3">Major 3rd</label></div>
+          <div class="interval-chk"><input type="checkbox" id="e-m3"><label for="e-m3">Minor 3rd</label></div>
+          <div class="interval-chk"><input type="checkbox" id="e-P5"><label for="e-P5">5th</label></div>
+          <div class="interval-chk"><input type="checkbox" id="e-M6"><label for="e-M6">6th</label></div>
+          <div class="interval-chk"><input type="checkbox" id="e-b7"><label for="e-b7">b7</label></div>
+          <div class="interval-chk"><input type="checkbox" id="e-M7"><label for="e-M7">maj7</label></div>
+        </div>
+      </div>
+      <div id="status" class="status">Roots: (none)</div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <div class="legend">
+        <div class="left">Frets</div>
+        <div id="fretLegend" class="frets"></div>
+      </div>
+      <div class="board">
+        <div id="stringLabels" class="labels"></div>
+        <div id="board" class="strings"></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ===== Config =====
+    const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const TUNING = ['E','A','D','G','B','E']; // 6 -> 1
+    const FRETS = 13;
+    document.documentElement.style.setProperty('--frets', FRETS);
+
+    // Interval semitones
+    const INTERVALS = {
+      'root': 0,
+      'm3': 3,
+      'M3': 4,
+      'P5': 7,
+      'M6': 9,
+      'b7': 10,
+      'M7': 11
+    };
+
+    // Hue per root pitch class
+    const HUE_MAP = {
+      'C': 0,   'C#': 30,  'D': 60,  'D#': 90,
+      'E': 120, 'F': 150,  'F#': 180,'G': 210,
+      'G#': 240,'A': 270,  'A#': 300,'B': 330
+    };
+
+    // Visual style per interval (dark hues so text is readable)
+    const INTERVAL_STYLE = {
+      'root': {s: 70, l: 16},
+      'M3' : {s: 55, l: 18},
+      'm3' : {s: 50, l: 20},
+      'P5' : {s: 45, l: 22},
+      'M6' : {s: 42, l: 23},
+      'b7' : {s: 40, l: 24},
+      'M7' : {s: 40, l: 24}
+    };
+
+    // ===== State =====
+    const roots = new Set(); // active roots
+    const intervalsByRoot = new Map(); // root -> Set of interval keys
+    let editingRoot = null; // which root is being edited in the interval editor
+
+    // ===== Helpers =====
+    const idx = n => NOTE_NAMES.indexOf(n);
+    const noteAt = (openIndex, fret) => NOTE_NAMES[(openIndex + fret) % 12];
+    const mod = (n,m) => ((n % m) + m) % m;
+
+    const boardEl = document.getElementById('board');
+    const stringLabelsEl = document.getElementById('stringLabels');
+    const fretLegendEl = document.getElementById('fretLegend');
+    const noteButtonsEl = document.getElementById('noteButtons');
+    const statusEl = document.getElementById('status');
+    const editRootSel = document.getElementById('editRoot');
+
+    // Note buttons
+    NOTE_NAMES.forEach(n=>{
+      const b=document.createElement('button');
+      b.className='note-btn'; b.textContent=n; b.dataset.note=n;
+      b.addEventListener('click',()=>toggleRoot(n));
+      noteButtonsEl.appendChild(b);
+    });
+
+    // Clear
+    document.getElementById('clearBtn').addEventListener('click',()=>{
+      roots.clear(); intervalsByRoot.clear(); editingRoot=null; rebuildEditorOptions(); syncUI();
+    });
+
+    // Fret legend + string labels
+    for(let f=0; f<FRETS; f++){ const d=document.createElement('div'); d.textContent=f; fretLegendEl.appendChild(d); }
+    TUNING.forEach(t=>{ const d=document.createElement('div'); d.textContent=t; stringLabelsEl.appendChild(d); });
+
+    // Build board
+    TUNING.forEach(openNote=>{
+      const openIdx = idx(openNote);
+      const row = document.createElement('div'); row.className='rowcells';
+      for(let f=0; f<FRETS; f++){
+        const cell = document.createElement('div'); cell.className='cell';
+        const pitch = noteAt(openIdx,f);
+        cell.dataset.note=pitch;
+        const badge = document.createElement('span'); badge.className='badge'; badge.textContent=pitch; badge.setAttribute('data-root-ring','false');
+        cell.appendChild(badge);
+        cell.addEventListener('click',()=>toggleRoot(pitch));
+        row.appendChild(cell);
+      }
+      boardEl.appendChild(row);
+    });
+
+    function defaultIntervals(){ return new Set(['root','M3','P5','M6']); } // C highlights E, G, A
+
+    function toggleRoot(n){
+      if(roots.has(n)){ roots.delete(n); intervalsByRoot.delete(n); if(editingRoot===n) editingRoot=null; }
+      else { roots.add(n); if(!intervalsByRoot.has(n)) intervalsByRoot.set(n, defaultIntervals()); if(!editingRoot) editingRoot=n; }
+      rebuildEditorOptions(); syncUI();
+    }
+
+    function rebuildEditorOptions(){
+      // Populate editRoot select with active roots
+      editRootSel.innerHTML = '';
+      const opts = [...roots];
+      if(opts.length===0){
+        const opt = document.createElement('option');
+        opt.textContent='(no roots selected)'; opt.disabled=true; opt.selected=true;
+        editRootSel.appendChild(opt);
+      }else{
+        opts.forEach(r=>{
+          const opt=document.createElement('option'); opt.value=r; opt.textContent=r;
+          if(!editingRoot) editingRoot=r;
+          if(editingRoot===r) opt.selected=true;
+          editRootSel.appendChild(opt);
+        });
+      }
+      // Enable/disable interval checkboxes
+      const controls = ['e-root','e-M3','e-m3','e-P5','e-M6','e-b7','e-M7'];
+      controls.forEach(id=>{ const el=document.getElementById(id); el.disabled = (roots.size===0); });
+      // Reflect current editing root
+      updateIntervalEditorChecks();
+    }
+
+    editRootSel.addEventListener('change', e=>{ editingRoot = e.target.value || null; updateIntervalEditorChecks(); syncUI(); });
+
+    function updateIntervalEditorChecks(){
+      const set = intervalsByRoot.get(editingRoot) || new Set();
+      const pairs = [['e-root','root'],['e-M3','M3'],['e-m3','m3'],['e-P5','P5'],['e-M6','M6'],['e-b7','b7'],['e-M7','M7']];
+      pairs.forEach(([cid,key])=>{
+        const el=document.getElementById(cid);
+        el.checked = set.has(key);
+        el.onchange = (ev)=>{
+          if(!intervalsByRoot.has(editingRoot)) intervalsByRoot.set(editingRoot, new Set());
+          const s = intervalsByRoot.get(editingRoot);
+          if(ev.target.checked) s.add(key); else s.delete(key);
+          syncUI();
+        };
+      });
+    }
+
+    // contributions for a pitch: array of {root, intervalKey}
+    function contributionsFor(pitch){
+      const list=[];
+      roots.forEach(root=>{
+        const set = intervalsByRoot.get(root) || new Set();
+        const semis = mod(idx(pitch) - idx(root), 12);
+        for(const key of set){
+          if(INTERVALS[key] === semis){
+            list.push({root, intervalKey:key});
+          }
+        }
+      });
+      return list;
+    }
+
+    // Build equal-slice gradient for multiple contributors or solid color
+    function cellBackgroundFor(contribs){
+      if(contribs.length===0) return '#000';
+      if(contribs.length===1){
+        const {root, intervalKey} = contribs[0];
+        const hue = HUE_MAP[root];
+        const style = INTERVAL_STYLE[intervalKey] || {s:45,l:22};
+        return `hsl(${hue} ${style.s}% ${style.l}%)`;
+      }
+      const parts = contribs.length;
+      const stops = [];
+      for(let i=0;i<parts;i++){
+        const {root, intervalKey} = contribs[i];
+        const hue = HUE_MAP[root];
+        const style = INTERVAL_STYLE[intervalKey] || {s:45,l:22};
+        const col = `hsl(${hue} ${style.s}% ${style.l}%)`;
+        const from = Math.round((i/parts)*100);
+        const to   = Math.round(((i+1)/parts)*100);
+        stops.push(`${col} ${from}% ${to}%`);
+      }
+      return `linear-gradient(90deg, ${stops.join(', ')})`;
+    }
+
+    function syncUI(){
+      // buttons
+      [...noteButtonsEl.querySelectorAll('.note-btn')].forEach(btn=>{
+        btn.classList.toggle('active', roots.has(btn.dataset.note));
+      });
+
+      // cells
+      [...document.querySelectorAll('.cell')].forEach(cell=>{
+        const pitch = cell.dataset.note;
+        const contribs = contributionsFor(pitch);
+        cell.style.background = cellBackgroundFor(contribs);
+        const badge = cell.querySelector('.badge');
+        // Root ring if any contribution marks intervalKey 'root'
+        const isRootHere = contribs.some(c => c.intervalKey === 'root');
+        badge.setAttribute('data-root-ring', isRootHere ? 'true' : 'false');
+      });
+
+      // status
+      statusEl.textContent = 'Roots: ' + (roots.size ? [...roots].join(', ') : '(none)')
+        + (editingRoot ? (' | Editing: ' + editingRoot) : '');
+    }
+
+    // init
+    rebuildEditorOptions();
+    syncUI();
+  </script>
+</body>
+</html>

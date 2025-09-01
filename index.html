@@ -1,327 +1,411 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Fretboard Trainer – Per‑Root Intervals</title>
+  <title>Chord Looper + Guitar Neck — Working Audio Merge</title>
   <style>
     :root{
-      --bg:#000;
-      --grid:#ffffff22;
-      --text:#f0f0f0;
-      --muted:#a0a0a0;
+      --bg:#0b0b0b; --panel:#101010; --text:#eee; --muted:#aaa; --line:#2a2a2a; --grid:#ffffff;
+      --accent:#7bdcff; --root:#8a1f1f; --chord:#0f3b2e; --rootBorder:#ff4d4d; --toneBorder:#49e6b1;
     }
     *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0; background:var(--bg); color:var(--text);
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-    }
+    body { margin:0; background:var(--bg); color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    main { max-width:1240px; margin:0 auto; padding:20px; }
+    h1 { font-size:18px; margin:0 0 12px; }
+    h2 { font-size:16px; margin:18px 0 8px; color:#ddd; }
+    p { color:var(--muted); font-size:14px; margin:6px 0; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:10px 0; }
+    input[type="number"], select, button { background:#111; color:#fff; border:1px solid #333; padding:8px 10px; border-radius:8px; }
+    button { cursor:pointer; font-weight:700; } button:hover{ border-color:#888; }
+    .panel { border:1px solid var(--line); background:var(--panel); border-radius:10px; padding:12px; }
+    .flex { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+    .col { flex:1 1 520px; min-width:320px; }
+    .bars { display:flex; gap:10px; overflow-x:auto; padding-bottom:6px; }
+    .bar { flex:0 0 auto; width:220px; background:#101010; border:1px solid #222; border-radius:8px; padding:8px; display:grid; grid-template-columns: 1fr 1fr; gap:8px; position:relative; }
+    .bar.playing{ border-color:var(--accent); box-shadow:0 0 0 2px #7bdcff33 inset; }
+    .bar::before { content: attr(data-index); position:absolute; top:6px; right:8px; color:#666; font-size:11px; }
+    .bar label { font-size:12px; color:#aaa; display:block; margin-bottom:4px; }
+    .bar .beats { grid-column: 1 / span 2; }
+    .tools { display:flex; gap:8px; }
+    .chip { background:#111; border:1px solid #333; padding:6px 10px; border-radius:999px; cursor:pointer; font-weight:700; }
+    .statusline{font-size:12px;color:#bbb}
+    .badge{font-size:12px;color:#bbb}
 
-    header{position:sticky; top:0; background:#000; border-bottom:1px solid var(--grid); padding:10px 12px}
-    .top{display:grid; gap:8px}
-    .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
-    h1{font-size:14px; margin:0; color:#ddd; font-weight:700}
+    /* Neck grid */
+    .neck-wrap{ border:1px solid var(--grid); background:#0d0d0d; border-radius:10px; padding:10px; }
+    .neck{ display:grid; gap:0; border:1px solid #fff; }
+    .neck .cell, .neck .hdr { border-right:1px solid #fff; border-bottom:1px solid #fff; text-align:center; padding:6px 4px; font-size:12px; color:#fff; position:relative; }
+    .neck .hdr{ background:#151515; font-weight:700; }
+    .neck .rowhdr{ background:#151515; font-weight:600; position:sticky; left:0; z-index:2; display:flex; gap:8px; align-items:center; justify-content:space-between; padding:4px 6px; }
+    .cell{ background:#000; }
+    .cell.highlight { background:var(--chord); }
+    .cell.root { background:var(--root); }
+    .cell.root::after{ content:""; position:absolute; inset:3px; border:2px solid var(--rootBorder); border-radius:999px; pointer-events:none; }
+    .cell.highlight:not(.root)::after{ content:""; position:absolute; inset:4px; border:1px dashed var(--toneBorder); border-radius:8px; pointer-events:none; opacity:0.8; }
 
-    .note-btn{
-      border:1px solid var(--grid); background:#000; color:#ddd;
-      padding:6px 8px; border-radius:6px; cursor:pointer; font-weight:700; font-size:13px;
-    }
-    .note-btn.active{background:#111; border-color:#fff}
-    .status{font-size:12px; color:var(--muted)}
-    .spacer{flex:1}
-    .btn{border:1px solid var(--grid); background:#000; color:#ddd; padding:6px 8px; border-radius:6px; cursor:pointer; font-weight:700; font-size:13px;}
+    .tune-controls{ display:flex; gap:6px; align-items:center; }
+    .tune-btn{ background:#141414; border:1px solid #444; padding:2px 8px; border-radius:6px; font-weight:800; }
+    .string-label{ font-weight:700; }
 
-    .editor{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
-    .editor label{color:#bbb; font-size:12px}
-    select{background:#000; color:#fff; border:1px solid var(--grid); border-radius:6px; padding:6px 8px}
-    .intervals{display:flex; gap:8px; flex-wrap:wrap}
-    .interval-chk{display:flex; gap:6px; align-items:center}
-    .interval-chk input{accent-color:#fff}
-    .interval-chk label{border:1px solid var(--grid); padding:6px 8px; border-radius:6px; font-weight:700; font-size:12px; cursor:pointer}
-    .interval-chk input:disabled + label{opacity:.35; cursor:not-allowed}
+    /* Fret filter strip */
+    .fret-filters{ display:grid; gap:0; margin-bottom:8px; }
+    .fret-filters .stub{ color:#aaa; display:flex; align-items:center; justify-content:flex-end; padding-right:8px; font-size:12px; }
+    .fret-box{ display:flex; align-items:center; justify-content:center; padding:6px 0; }
+    .fret-box label{ font-size:11px; color:#ddd; display:flex; align-items:center; gap:6px; cursor:pointer; }
+    .fret-box input{ transform:scale(1.1); }
 
-    main{padding:12px}
-
-    /* Grid board */
-    .wrap{border:1px solid var(--grid)}
-    .legend{display:grid; grid-template-columns:72px 1fr; border-bottom:1px solid var(--grid);}
-    .legend .left{display:flex; align-items:center; justify-content:center; border-right:1px solid var(--grid); color:#999; font-size:12px; padding:6px}
-    .legend .frets{display:grid; grid-template-columns:repeat(var(--frets), 1fr);}
-    .legend .frets div{border-left:1px solid var(--grid); text-align:center; padding:6px 0; color:#888; font-size:12px}
-
-    .board{display:grid; grid-template-columns:72px 1fr;}
-    .labels{display:grid; grid-template-rows:repeat(6, 1fr); border-right:1px solid var(--grid);}
-    .labels div{display:flex; align-items:center; justify-content:center; border-bottom:1px solid var(--grid); font-weight:800; color:#ddd}
-    .labels div:last-child{border-bottom:none}
-    .strings{display:grid; grid-template-rows:repeat(6, 1fr);}
-    .rowcells{display:grid; grid-template-columns:repeat(var(--frets), 1fr);}
-    .cell{
-      border-left:1px solid var(--grid);
-      border-bottom:1px solid var(--grid);
-      min-height:44px;
-      display:flex; align-items:center; justify-content:center;
-      position:relative;
-      background:#000; color:#fff; font-weight:800; font-size:13px;
-      transition: background-color .15s ease;
-    }
-    .rowcells:last-child .cell{border-bottom:none}
-
-    .badge{
-      position:relative; z-index:1; padding:2px 6px; border-radius:4px;
-    }
-    /* Root ring (drawn with outline so no glow) */
-    .badge[data-root-ring="true"]{
-      outline: 2px solid #fff;
-      outline-offset: 2px;
-      border-radius: 999px; /* circular ring look around text */
-      padding:2px 8px;
-    }
-
-    @media (max-width: 800px){
-      .legend{grid-template-columns:56px 1fr;}
-      .board{grid-template-columns:56px 1fr;}
-      .cell{min-height:38px; font-size:12px}
-    }
+    .small{font-size:12px;color:#aaa}
   </style>
 </head>
 <body>
-  <header>
-    <div class="top">
-      <div class="row">
-        <h1>Fretboard Trainer</h1>
-        <div id="noteButtons" class="buttons"></div>
-        <div class="spacer"></div>
-        <button id="clearBtn" class="btn">Clear</button>
-      </div>
-      <div class="row editor">
-        <label for="editRoot">Edit intervals for:</label>
-        <select id="editRoot"></select>
-        <div id="intervalEditor" class="intervals">
-          <!-- Order: Root, M3, m3, P5, 6th, b7, maj7 -->
-          <div class="interval-chk"><input type="checkbox" id="e-root"><label for="e-root">Root</label></div>
-          <div class="interval-chk"><input type="checkbox" id="e-M3"><label for="e-M3">Major 3rd</label></div>
-          <div class="interval-chk"><input type="checkbox" id="e-m3"><label for="e-m3">Minor 3rd</label></div>
-          <div class="interval-chk"><input type="checkbox" id="e-P5"><label for="e-P5">5th</label></div>
-          <div class="interval-chk"><input type="checkbox" id="e-M6"><label for="e-M6">6th</label></div>
-          <div class="interval-chk"><input type="checkbox" id="e-b7"><label for="e-b7">b7</label></div>
-          <div class="interval-chk"><input type="checkbox" id="e-M7"><label for="e-M7">maj7</label></div>
+  <main>
+    <h1>Chord Looper + Guitar Neck — Working Audio Merge</h1>
+    <p class="statusline">Start/Stop mirrors the last known-good audio. Frets editable. Filters + retune work. Neck follows the active chord.</p>
+
+    <div class="flex">
+      <div class="col">
+        <h2>Progression & Transport</h2>
+        <div class="panel">
+          <div class="row">
+            <label>BPM: <input id="bpm" type="number" min="40" max="240" step="1" value="100"></label>
+            <label>Time Sig:
+              <select id="timesig"><option value="4" selected>4/4</option><option value="3">3/4</option><option value="6">6/8</option></select>
+            </label>
+            <label>Voicing:
+              <select id="voicing"><option value="mid" selected>Mid</option><option value="low">Low</option><option value="high">High</option></select>
+            </label>
+            <label>Play mode:
+              <select id="mode">
+                <option value="block" selected>Block (hold)</option>
+                <option value="arpUp">Arp Up</option>
+                <option value="arpDown">Arp Down</option>
+                <option value="jazzComp">Jazz comp</option>
+                <option value="popBackbeat">Pop backbeat</option>
+                <option value="reggae">Reggae</option>
+                <option value="ballad">Ballad</option>
+              </select>
+            </label>
+            <label>Drum Vol: <input id="drumVol" type="number" min="0" max="1" step="0.05" value="0.25"></label>
+            <span class="badge">Status: <b id="status">idle</b></span>
+          </div>
+
+          <div class="row">
+            <button id="start">Start (Loop)</button>
+            <button id="stop">Stop</button>
+            <span id="nowPlaying" class="small"></span>
+          </div>
+
+          <h3 style="margin:10px 0 6px">Timeline</h3>
+          <div id="bars" class="bars"></div>
+          <div class="tools" style="margin-top:8px;">
+            <button id="addBar">+ Add bar</button>
+            <button id="removeBar">– Remove last bar</button>
+            <span class="small">Each bar shows: Root, Type, Beats.</span>
+          </div>
+
+          <h3 style="margin:12px 0 6px">Presets</h3>
+          <div class="row">
+            <span class="chip" data-prog="C:maj7:4|A:m7:4|D:m7:4|G:7:4">Jazz ii–V–I (C)</span>
+            <span class="chip" data-prog="E:m:4|C:maj:4|G:maj:4|D:maj:4">Pop 4 (Em–C–G–D)</span>
+            <span class="chip" data-prog="D:m7:4|G:7:4|C:maj7:8">ii–V–I (Dm7–G7–Cmaj7)</span>
+          </div>
         </div>
       </div>
-      <div id="status" class="status">Roots: (none)</div>
-    </div>
-  </header>
 
-  <main>
-    <div class="wrap">
-      <div class="legend">
-        <div class="left">Frets</div>
-        <div id="fretLegend" class="frets"></div>
-      </div>
-      <div class="board">
-        <div id="stringLabels" class="labels"></div>
-        <div id="board" class="strings"></div>
+      <div class="col">
+        <h2>Guitar Neck (Standard E A D G B E)</h2>
+        <div class="panel neck-wrap">
+          <div class="row" style="margin-top:0; margin-bottom:6px;">
+            <label>Fret Count (0–24): <input id="fretCount" type="number" min="0" max="24" step="1" value="15"></label>
+            <button id="applyFrets">Apply Frets</button>
+          </div>
+          <div id="fretFilters" class="fret-filters"></div>
+          <div id="neck" class="neck"></div>
+        </div>
       </div>
     </div>
   </main>
 
   <script>
-    // ===== Config =====
-    const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-    const TUNING = ['E','A','D','G','B','E']; // 6 -> 1
-    const FRETS = 13;
-    document.documentElement.style.setProperty('--frets', FRETS);
-
-    // Interval semitones
-    const INTERVALS = {
-      'root': 0,
-      'm3': 3,
-      'M3': 4,
-      'P5': 7,
-      'M6': 9,
-      'b7': 10,
-      'M7': 11
-    };
-
-    // Hue per root pitch class
-    const HUE_MAP = {
-      'C': 0,   'C#': 30,  'D': 60,  'D#': 90,
-      'E': 120, 'F': 150,  'F#': 180,'G': 210,
-      'G#': 240,'A': 270,  'A#': 300,'B': 330
-    };
-
-    // Visual style per interval (dark hues so text is readable)
-    const INTERVAL_STYLE = {
-      'root': {s: 70, l: 16},
-      'M3' : {s: 55, l: 18},
-      'm3' : {s: 50, l: 20},
-      'P5' : {s: 45, l: 22},
-      'M6' : {s: 42, l: 23},
-      'b7' : {s: 40, l: 24},
-      'M7' : {s: 40, l: 24}
-    };
-
-    // ===== State =====
-    const roots = new Set(); // active roots
-    const intervalsByRoot = new Map(); // root -> Set of interval keys
-    let editingRoot = null; // which root is being edited in the interval editor
-
-    // ===== Helpers =====
-    const idx = n => NOTE_NAMES.indexOf(n);
-    const noteAt = (openIndex, fret) => NOTE_NAMES[(openIndex + fret) % 12];
-    const mod = (n,m) => ((n % m) + m) % m;
-
-    const boardEl = document.getElementById('board');
-    const stringLabelsEl = document.getElementById('stringLabels');
-    const fretLegendEl = document.getElementById('fretLegend');
-    const noteButtonsEl = document.getElementById('noteButtons');
-    const statusEl = document.getElementById('status');
-    const editRootSel = document.getElementById('editRoot');
-
-    // Note buttons
-    NOTE_NAMES.forEach(n=>{
-      const b=document.createElement('button');
-      b.className='note-btn'; b.textContent=n; b.dataset.note=n;
-      b.addEventListener('click',()=>toggleRoot(n));
-      noteButtonsEl.appendChild(b);
-    });
-
-    // Clear
-    document.getElementById('clearBtn').addEventListener('click',()=>{
-      roots.clear(); intervalsByRoot.clear(); editingRoot=null; rebuildEditorOptions(); syncUI();
-    });
-
-    // Fret legend + string labels
-    for(let f=0; f<FRETS; f++){ const d=document.createElement('div'); d.textContent=f; fretLegendEl.appendChild(d); }
-    TUNING.forEach(t=>{ const d=document.createElement('div'); d.textContent=t; stringLabelsEl.appendChild(d); });
-
-    // Build board
-    TUNING.forEach(openNote=>{
-      const openIdx = idx(openNote);
-      const row = document.createElement('div'); row.className='rowcells';
-      for(let f=0; f<FRETS; f++){
-        const cell = document.createElement('div'); cell.className='cell';
-        const pitch = noteAt(openIdx,f);
-        cell.dataset.note=pitch;
-        const badge = document.createElement('span'); badge.className='badge'; badge.textContent=pitch; badge.setAttribute('data-root-ring','false');
-        cell.appendChild(badge);
-        cell.addEventListener('click',()=>toggleRoot(pitch));
-        row.appendChild(cell);
-      }
-      boardEl.appendChild(row);
-    });
-
-    function defaultIntervals(){ return new Set(['root','M3','P5','M6']); } // C highlights E, G, A
-
-    function toggleRoot(n){
-      if(roots.has(n)){ roots.delete(n); intervalsByRoot.delete(n); if(editingRoot===n) editingRoot=null; }
-      else { roots.add(n); if(!intervalsByRoot.has(n)) intervalsByRoot.set(n, defaultIntervals()); if(!editingRoot) editingRoot=n; }
-      rebuildEditorOptions(); syncUI();
+    // ===== Audio (mirrors known-good structure) =====
+    let ctx, master, drumBus;
+    function ac(){
+      if(!ctx) ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
+      if(ctx.state === 'suspended') ctx.resume();
+      if(!master){ master = ctx.createGain(); master.gain.value = 0.55; master.connect(ctx.destination); }
+      if(!drumBus){ drumBus = ctx.createGain(); drumBus.gain.value = parseFloat(document.getElementById('drumVol').value || '0.25'); drumBus.connect(master); }
+      return ctx;
     }
 
-    function rebuildEditorOptions(){
-      // Populate editRoot select with active roots
-      editRootSel.innerHTML = '';
-      const opts = [...roots];
-      if(opts.length===0){
-        const opt = document.createElement('option');
-        opt.textContent='(no roots selected)'; opt.disabled=true; opt.selected=true;
-        editRootSel.appendChild(opt);
-      }else{
-        opts.forEach(r=>{
-          const opt=document.createElement('option'); opt.value=r; opt.textContent=r;
-          if(!editingRoot) editingRoot=r;
-          if(editingRoot===r) opt.selected=true;
-          editRootSel.appendChild(opt);
-        });
-      }
-      // Enable/disable interval checkboxes
-      const controls = ['e-root','e-M3','e-m3','e-P5','e-M6','e-b7','e-M7'];
-      controls.forEach(id=>{ const el=document.getElementById(id); el.disabled = (roots.size===0); });
-      // Reflect current editing root
-      updateIntervalEditorChecks();
+    const NOISE={buf:null};
+    function ensureNoise(){ const c=ac(); if(!NOISE.buf){ const b=c.createBuffer(1,c.sampleRate*0.6,c.sampleRate); const d=b.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1; NOISE.buf=b; } }
+    function kick(t){ const c=ac(); const o=c.createOscillator(), g=c.createGain(); o.type='sine';
+      o.frequency.setValueAtTime(150,t); o.frequency.exponentialRampToValueAtTime(45,t+0.12);
+      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.9,t+0.004); g.gain.exponentialRampToValueAtTime(0.0001,t+0.28);
+      o.connect(g).connect(drumBus); o.start(t); o.stop(t+0.30); }
+    function snare(t){ const c=ac(); ensureNoise(); const s=c.createBufferSource(); s.buffer=NOISE.buf;
+      const bp=c.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=2000; bp.Q.value=0.8;
+      const g=c.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.9,t+0.003); g.gain.exponentialRampToValueAtTime(0.0001,t+0.16);
+      s.connect(bp).connect(g).connect(drumBus); s.start(t); s.stop(t+0.18); }
+    function hihat(t,len=0.05){ const c=ac(); ensureNoise(); const s=c.createBufferSource(); s.buffer=NOISE.buf;
+      const hp=c.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=7000; hp.Q.value=0.9;
+      const bp=c.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=9000; bp.Q.value=0.7;
+      const g=c.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.55,t+0.002); g.gain.exponentialRampToValueAtTime(0.0001,t+len);
+      s.connect(hp).connect(bp).connect(g).connect(drumBus); s.start(t); s.stop(t+len+0.02); }
+
+    function voice(freq, t0, dur, gainScale=1){
+      const c=ac(); const o=c.createOscillator(), g=c.createGain(), f=c.createBiquadFilter();
+      f.type='lowpass'; f.frequency.value=3800; o.type='triangle'; o.frequency.setValueAtTime(freq, t0);
+      const a=Math.min(0.02, dur*0.1), r=Math.min(0.25, dur*0.3);
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.9*gainScale, t0+a);
+      g.gain.linearRampToValueAtTime(0.7*gainScale, t0+Math.max(a, dur-r));
+      g.gain.linearRampToValueAtTime(0, t0+dur);
+      o.connect(f).connect(g).connect(master);
+      o.start(t0); o.stop(t0+dur+0.05);
+    }
+    function playChord(pitches, t0, dur, mode='block', gainScale=1){
+      const order=[...pitches]; if(mode==='arpDown') order.reverse();
+      const step=dur/Math.max(1, order.length);
+      order.forEach((freq,i)=>{ const st=(mode==='block')?t0:(t0+i*step*0.9); voice(freq, st, dur*0.95, gainScale); });
     }
 
-    editRootSel.addEventListener('change', e=>{ editingRoot = e.target.value || null; updateIntervalEditorChecks(); syncUI(); });
+    // ===== Theory + scheduler =====
+    const NOTE_INDEX = {C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+    const PC_TO_NAME_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const ROOT_OPTIONS = ['C','C#','Db','D','D#','Eb','E','F','F#','Gb','G','G#','Ab','A','A#','Bb','B'];
+    function parseRootPc(token){ const m=token.match(/^([A-Ga-g])([#b]?)/); if(!m) return 0; let L=m[1].toUpperCase(), a=m[2]||''; let s=NOTE_INDEX[L]; if(a==='#') s+=1; else if(a==='b') s-=1; return (s+12)%12; }
+    const CHORDS = {'maj':[0,4,7],'m':[0,3,7],'min':[0,3,7],'7':[0,4,7,10],'maj7':[0,4,7,11],'m7':[0,3,7,10],'dim':[0,3,6],'m7b5':[0,3,6,10],'sus2':[0,2,7],'sus4':[0,5,7],'add9':[0,4,7,14]};
+    const CHORD_ORDER = ['maj','m','7','maj7','m7','dim','m7b5','sus2','sus4','add9'];
 
-    function updateIntervalEditorChecks(){
-      const set = intervalsByRoot.get(editingRoot) || new Set();
-      const pairs = [['e-root','root'],['e-M3','M3'],['e-m3','m3'],['e-P5','P5'],['e-M6','M6'],['e-b7','b7'],['e-M7','M7']];
-      pairs.forEach(([cid,key])=>{
-        const el=document.getElementById(cid);
-        el.checked = set.has(key);
-        el.onchange = (ev)=>{
-          if(!intervalsByRoot.has(editingRoot)) intervalsByRoot.set(editingRoot, new Set());
-          const s = intervalsByRoot.get(editingRoot);
-          if(ev.target.checked) s.add(key); else s.delete(key);
-          syncUI();
-        };
-      });
-    }
+    let running=false, schedule=[], scheduleIdx=0, loopEndTime=0;
+    function buildSchedule(startTime){
+      schedule=[]; scheduleIdx=0;
+      const bpm=parseFloat(document.getElementById('bpm').value||'100'); const spb=60/bpm;
+      const v=document.getElementById('voicing').value; const mode=document.getElementById('mode').value; const tsBeats=parseInt(document.getElementById('timesig').value,10);
+      const bars=getBarsSpec(); if(!bars.length) return;
+      let baseOct=(v==='low')?3:(v==='high')?5:4;
+      let t=startTime;
+      const RHYTHM_PATTERNS={
+        block:{holdBar:true},
+        arpUp:{arpeggiate:'up'},
+        arpDown:{arpeggiate:'down'},
+        jazzComp:{hits:[{pos:0,gain:0.6,len:0.35},{pos:1,gain:0.9,len:0.35},{pos:2,gain:0.6,len:0.35},{pos:3,gain:0.95,len:0.35},{pos:1.5,gain:0.7,len:0.25},{pos:2.5,gain:0.7,len:0.25}]},
+        popBackbeat:{hits:[{pos:0,gain:1,len:0.5},{pos:1.5,gain:0.7,len:0.35},{pos:2,gain:0.9,len:0.5},{pos:3.5,gain:0.7,len:0.35}]},
+        reggae:{hits:[{pos:0.5,gain:0.9,len:0.25},{pos:1.5,gain:0.9,len:0.25},{pos:2.5,gain:0.9,len:0.25},{pos:3.5,gain:0.9,len:0.25}]},
+        ballad:{hits:[{pos:0,gain:1,len:0.9},{pos:3,gain:0.5,len:0.3}]}
+      };
 
-    // contributions for a pitch: array of {root, intervalKey}
-    function contributionsFor(pitch){
-      const list=[];
-      roots.forEach(root=>{
-        const set = intervalsByRoot.get(root) || new Set();
-        const semis = mod(idx(pitch) - idx(root), 12);
-        for(const key of set){
-          if(INTERVALS[key] === semis){
-            list.push({root, intervalKey:key});
-          }
+      bars.forEach((bar,i)=>{
+        const rootPc=parseRootPc(bar.root); const ints=CHORDS[bar.type]||CHORDS.maj;
+        const freqs=(function(rootPc, intervals, octaveBase=4){
+          const pcs = intervals.map(iv => (rootPc+(iv%12))%12);
+          const rootMidi = (octaveBase+1)*12 + rootPc;
+          return pcs.map(pc=>{ let midi=rootMidi + ((pc-rootPc+12)%12); while(midi>rootMidi+16) midi-=12; return 440*Math.pow(2,(midi-69)/12); });
+        })(rootPc, ints, baseOct);
+        const bb=(bar.beats||tsBeats), bd=bb*spb, name=`${bar.root}${bar.type==='maj'?'':bar.type}`;
+
+        // neck update at bar start
+        schedule.push({t, type:'neck', data:{rootPc, pcs:ints.map(iv=>(rootPc+(iv%12))%12)}});
+
+        const pat = (function(modeKey){
+          const P = {block:'block', arpUp:'arpUp', arpDown:'arpDown', jazzComp:'jazzComp', popBackbeat:'popBackbeat', reggae:'reggae', ballad:'ballad'};
+          return RHYTHM_PATTERNS[P[modeKey]] || RHYTHM_PATTERNS.block;
+        })(mode);
+
+        if(pat.holdBar){
+          schedule.push({t, type:'chord', data:{freqs, dur:bd, mode:'block', gain:1}});
+        } else if (pat.arpeggiate){
+          const arpmode = pat.arpeggiate === 'down' ? 'arpDown' : 'arpUp';
+          schedule.push({t, type:'chord', data:{freqs, dur:bd, mode:arpmode, gain:0.9}});
+        } else {
+          (pat.hits||[{pos:0,gain:1,len:1}]).forEach(h=>{
+            const ht=t+(h.pos/4)*bd; const hd=Math.max(0.08,(h.len/4)*bd);
+            schedule.push({t:ht, type:'chord', data:{freqs, dur:hd, mode:'block', gain:h.gain}});
+          });
         }
+
+        // beats & drums
+        for(let b=0;b<bb;b++){ schedule.push({t:t+b*spb, type:'beat', data:{bar:i, beat:b+1, bb}}); }
+        for(let b=0;b<bb;b++){ const tt=t+b*spb; if((b%bb)===0 || (b%bb)===2) schedule.push({t:tt, type:'kick'}); if((b%bb)===1 || (b%bb)===3) schedule.push({t:tt, type:'snare'}); schedule.push({t:tt, type:'hat'}); schedule.push({t:tt+spb/2, type:'hat'}); }
+
+        t += bd;
       });
-      return list;
+
+      schedule.sort((a,b)=>a.t-b.t);
+      loopEndTime = schedule.length ? schedule[schedule.length-1].t : startTime;
+      const last = schedule[schedule.length-1]; if(last && last.type==='chord') loopEndTime = last.t + last.data.dur;
+      scheduleIdx=0;
     }
 
-    // Build equal-slice gradient for multiple contributors or solid color
-    function cellBackgroundFor(contribs){
-      if(contribs.length===0) return '#000';
-      if(contribs.length===1){
-        const {root, intervalKey} = contribs[0];
-        const hue = HUE_MAP[root];
-        const style = INTERVAL_STYLE[intervalKey] || {s:45,l:22};
-        return `hsl(${hue} ${style.s}% ${style.l}%)`;
+    function scheduler(){
+      if(!running) return;
+      const lookahead=0.2, now=ctx.currentTime;
+      while(scheduleIdx<schedule.length && schedule[scheduleIdx].t < now+lookahead){
+        const ev=schedule[scheduleIdx++];
+        if(ev.type==='neck'){ highlightChordOnNeck(ev.data.rootPc, ev.data.pcs); }
+        else if(ev.type==='chord'){ playChord(ev.data.freqs, ev.t, ev.data.dur, ev.data.mode, ev.data.gain||1); }
+        else if(ev.type==='kick'){ kick(ev.t); } else if(ev.type==='snare'){ snare(ev.t); } else if(ev.type==='hat'){ hihat(ev.t); }
       }
-      const parts = contribs.length;
-      const stops = [];
-      for(let i=0;i<parts;i++){
-        const {root, intervalKey} = contribs[i];
-        const hue = HUE_MAP[root];
-        const style = INTERVAL_STYLE[intervalKey] || {s:45,l:22};
-        const col = `hsl(${hue} ${style.s}% ${style.l}%)`;
-        const from = Math.round((i/parts)*100);
-        const to   = Math.round(((i+1)/parts)*100);
-        stops.push(`${col} ${from}% ${to}%`);
+      if(scheduleIdx>=schedule.length){ const restart=Math.max(now+0.05, loopEndTime+0.02); buildSchedule(restart); }
+      setTimeout(scheduler, 25);
+    }
+
+    // ===== Neck with filters/retune/editable frets =====
+    let FRETS = 15;
+    let fretsEnabled = Array(FRETS+1).fill(true);
+    const neck = document.getElementById('neck');
+    const fretFiltersEl = document.getElementById('fretFilters');
+    const fretCountInput = document.getElementById('fretCount');
+    const applyFretsBtn = document.getElementById('applyFrets');
+
+    const strings = [
+      {name:'E', midi:40, enabled:true}, // E2
+      {name:'A', midi:45, enabled:true}, // A2
+      {name:'D', midi:50, enabled:true}, // D3
+      {name:'G', midi:55, enabled:true}, // G3
+      {name:'B', midi:59, enabled:true}, // B3
+      {name:'E', midi:64, enabled:true}, // E4
+    ];
+
+    function pcName(pc){ return PC_TO_NAME_SHARP[pc]; }
+
+    function setGridColumns(){
+      neck.style.gridTemplateColumns = '128px repeat(' + (FRETS+1) + ', minmax(36px,1fr))';
+      fretFiltersEl.style.gridTemplateColumns = '128px repeat(' + (FRETS+1) + ', minmax(36px,1fr))';
+    }
+
+    function buildFretFilters(){
+      fretFiltersEl.innerHTML='';
+      const stub = document.createElement('div');
+      stub.className='stub'; stub.textContent='Show fret:';
+      fretFiltersEl.appendChild(stub);
+      for(let f=0; f<=FRETS; f++){
+        const box = document.createElement('div'); box.className='fret-box';
+        const label = document.createElement('label');
+        const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = fretsEnabled[f];
+        cb.addEventListener('change', ()=>{ fretsEnabled[f]=cb.checked; applyFiltersAndRelabel(); });
+        const span = document.createElement('span'); span.textContent = String(f);
+        label.appendChild(cb); label.appendChild(span);
+        box.appendChild(label);
+        fretFiltersEl.appendChild(box);
       }
-      return `linear-gradient(90deg, ${stops.join(', ')})`;
     }
 
-    function syncUI(){
-      // buttons
-      [...noteButtonsEl.querySelectorAll('.note-btn')].forEach(btn=>{
-        btn.classList.toggle('active', roots.has(btn.dataset.note));
-      });
-
-      // cells
-      [...document.querySelectorAll('.cell')].forEach(cell=>{
-        const pitch = cell.dataset.note;
-        const contribs = contributionsFor(pitch);
-        cell.style.background = cellBackgroundFor(contribs);
-        const badge = cell.querySelector('.badge');
-        // Root ring if any contribution marks intervalKey 'root'
-        const isRootHere = contribs.some(c => c.intervalKey === 'root');
-        badge.setAttribute('data-root-ring', isRootHere ? 'true' : 'false');
-      });
-
-      // status
-      statusEl.textContent = 'Roots: ' + (roots.size ? [...roots].join(', ') : '(none)')
-        + (editingRoot ? (' | Editing: ' + editingRoot) : '');
+    function makeRowHeader(si){
+      const wrap = document.createElement('div'); wrap.className='cell rowhdr';
+      const left = document.createElement('div'); left.style.display='flex'; left.style.alignItems='center'; left.style.gap='6px';
+      const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = strings[si].enabled;
+      cb.addEventListener('change', ()=>{ strings[si].enabled = cb.checked; applyFiltersAndRelabel(); });
+      const label = document.createElement('span'); label.className='string-label'; label.textContent = strings[si].name;
+      left.appendChild(cb); left.appendChild(label);
+      const right = document.createElement('div'); right.className='tune-controls';
+      const down = document.createElement('button'); down.className='tune-btn'; down.textContent='▼';
+      const up = document.createElement('button'); up.className='tune-btn'; up.textContent='▲';
+      const noteSpan = document.createElement('span'); noteSpan.textContent = pcName(strings[si].midi % 12);
+      down.addEventListener('click', ()=>{ strings[si].midi -= 1; strings[si].name = pcName(strings[si].midi % 12); label.textContent = strings[si].name; noteSpan.textContent = strings[si].name; applyFiltersAndRelabel(); });
+      up.addEventListener('click', ()=>{ strings[si].midi += 1; strings[si].name = pcName(strings[si].midi % 12); label.textContent = strings[si].name; noteSpan.textContent = strings[si].name; applyFiltersAndRelabel(); });
+      right.appendChild(down); right.appendChild(noteSpan); right.appendChild(up);
+      wrap.appendChild(left); wrap.appendChild(right);
+      return wrap;
     }
 
-    // init
-    rebuildEditorOptions();
-    syncUI();
+    function buildNeck(){
+      neck.innerHTML='';
+      setGridColumns();
+      // Header row
+      const header = ['String/Fret']; for(let f=0; f<=FRETS; f++) header.push(String(f));
+      header.forEach((txt,i)=>{ const el=document.createElement('div'); el.className = i===0?'hdr rowhdr hdr':'hdr'; el.textContent=txt; neck.appendChild(el); });
+      // Rows
+      for(let si=0; si<strings.length; si++){
+        neck.appendChild(makeRowHeader(si));
+        for(let f=0; f<=FRETS; f++){
+          const cell=document.createElement('div'); cell.className='cell'; cell.dataset.si=String(si); cell.dataset.fret=String(f); neck.appendChild(cell);
+        }
+      }
+      applyFiltersAndRelabel();
+    }
+
+    function applyFiltersAndRelabel(){
+      const cells = neck.querySelectorAll('.cell:not(.rowhdr)');
+      cells.forEach(cell=>{
+        const si = parseInt(cell.dataset.si,10);
+        const f  = parseInt(cell.dataset.fret,10);
+        const enabled = strings[si].enabled && fretsEnabled[f];
+        cell.classList.remove('root','highlight');
+        if(!enabled){ cell.textContent=''; cell.dataset.pc=''; cell.dataset.midi=''; return; }
+        const midi = strings[si].midi + f;
+        const pc = midi % 12;
+        cell.dataset.midi = String(midi);
+        cell.dataset.pc = String(pc);
+        cell.textContent = pcName(pc);
+      });
+    }
+
+    function highlightChordOnNeck(rootPc, chordPcs){
+      const cells = neck.querySelectorAll('.cell:not(.rowhdr)');
+      cells.forEach(c=>{ c.classList.remove('highlight','root'); });
+      cells.forEach(c=>{
+        const si = parseInt(c.dataset.si||'-1',10);
+        const f = parseInt(c.dataset.fret||'-1',10);
+        if(!(strings[si]?.enabled && fretsEnabled[f])) return;
+        const pc = parseInt(c.dataset.pc||'-1',10);
+        if(Number.isNaN(pc)) return;
+        if(pc===rootPc){ c.classList.add('root'); }
+        else if(chordPcs.includes(pc)){ c.classList.add('highlight'); }
+      });
+    }
+
+    // ===== Timeline UI (compact, working) =====
+    const barsEl = document.getElementById('bars');
+    function makeSelect(options){ const s=document.createElement('select'); options.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; s.appendChild(o); }); return s; }
+    function addBar(root='C', type='maj', beats=null){
+      const bar=document.createElement('div'); bar.className='bar'; bar.dataset.index=(barsEl.children.length+1);
+      const rootSel=makeSelect(ROOT_OPTIONS); rootSel.value=root;
+      const typeSel=makeSelect(CHORD_ORDER); typeSel.value=type;
+      const beatsInput=document.createElement('input'); beatsInput.type='number'; beatsInput.min='1'; beatsInput.step='1'; beatsInput.value=beats ?? document.getElementById('timesig').value;
+      const rw=document.createElement('div'), tw=document.createElement('div'), bw=document.createElement('div'); bw.className='beats';
+      const l1=document.createElement('label'); l1.textContent='Root'; const l2=document.createElement('label'); l2.textContent='Type'; const l3=document.createElement('label'); l3.textContent='Beats';
+      rw.append(l1,rootSel); tw.append(l2,typeSel); bw.append(l3,beatsInput);
+      bar.append(rw,tw,bw); barsEl.appendChild(bar);
+    }
+    function removeBar(){ const last=barsEl.lastElementChild; if(last) barsEl.removeChild(last); }
+    // seed
+    addBar('C','maj7'); addBar('A','m7'); addBar('D','m7'); addBar('G','7');
+    document.getElementById('addBar').addEventListener('click', ()=>addBar());
+    document.getElementById('removeBar').addEventListener('click', removeBar);
+    document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click', ()=>{
+      barsEl.innerHTML=''; c.dataset.prog.split('|').forEach(tok=>{ const m=tok.trim().match(/^([A-G][#b]?):([a-zA-Z0-9]+):(\d+)$/); if(m) addBar(m[1], m[2], parseInt(m[3],10)); });
+    }));
+    function getBarsSpec(){
+      const out=[]; barsEl.querySelectorAll('.bar').forEach(b=>{ const [rootSel,typeSel]=b.querySelectorAll('select'); const inp=b.querySelector('input'); out.push({root:rootSel.value, type:typeSel.value, beats:parseInt(inp.value||'4',10)}); });
+      return out;
+    }
+
+    // ===== Transport (mirrors working behavior) =====
+    document.getElementById('start').addEventListener('click', ()=>{
+      ac(); drumBus.gain.value = parseFloat(document.getElementById('drumVol').value || '0.25');
+      document.getElementById('status').textContent='running';
+      running = true;
+      buildSchedule(ctx.currentTime + 0.12);
+      scheduler();
+    });
+    document.getElementById('stop').addEventListener('click', ()=>{
+      running = false;
+      document.getElementById('status').textContent='stopped';
+    });
+    document.getElementById('drumVol').addEventListener('change', e=>{
+      ac(); drumBus.gain.value = parseFloat(e.target.value || '0.25');
+    });
+
+    // Initial build for fretboard
+    function initialBuild(){
+      setGridColumns();
+      buildFretFilters();
+      buildNeck();
+    }
+    initialBuild();
   </script>
 </body>
 </html>
